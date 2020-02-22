@@ -1,4 +1,4 @@
-
+import numpy as np
 
 class Game:
 	def __init__(self, size):
@@ -64,19 +64,22 @@ class Game:
 		return opponent_groups
 
 	def createGroup(self,x,y,player):
-		return self.createGroupRec(x,y,player,set())
+		return self.createGroupRec(x,y,set(),lambda color: color == player)
 
-	def createGroupRec(self,x,y,player,group_so_far):
+	def createGroupGeneral(self,x,y,belongs_to_group):
+		return self.createGroupRec(x,y,set(),belongs_to_group)
+
+	def createGroupRec(self,x,y,group_so_far,belongs_to_group):
 		returnset = group_so_far.copy()
 		returnset.add((y,x))
-		if x > 0 and self.board[y][x-1] == player and not (y,x-1) in returnset:
-			returnset = self.createGroupRec(x-1,y,player,returnset)
-		if x < self.gamesize - 1 and self.board[y][x+1] == player and not (y,x+1) in returnset:
-			returnset = self.createGroupRec(x+1,y,player,returnset)
-		if y > 0 and self.board[y-1][x] == player and not (y-1,x) in returnset:
-			returnset = self.createGroupRec(x,y-1,player,returnset)
-		if y < self.gamesize - 1 and self.board[y+1][x] == player and not (y+1,x) in returnset:
-			returnset = self.createGroupRec(x,y+1,player,returnset)
+		if x > 0 and belongs_to_group(self.board[y][x-1]) and not (y,x-1) in returnset:
+			returnset = self.createGroupRec(x-1,y,returnset,belongs_to_group)
+		if x < self.gamesize - 1 and belongs_to_group(self.board[y][x+1]) and not (y,x+1) in returnset:
+			returnset = self.createGroupRec(x+1,y,returnset,belongs_to_group)
+		if y > 0 and belongs_to_group(self.board[y-1][x]) and not (y-1,x) in returnset:
+			returnset = self.createGroupRec(x,y-1,returnset,belongs_to_group)
+		if y < self.gamesize - 1 and belongs_to_group(self.board[y+1][x]) and not (y+1,x) in returnset:
+			returnset = self.createGroupRec(x,y+1,returnset,belongs_to_group)
 		return returnset
 
 	def isSurrounded(self,stone_group):
@@ -97,6 +100,108 @@ class Game:
 		for (y,x) in stone_group:
 			self.board[y][x] = 0
 
+	def findAllGroups(self, player):
+		stones_considered = set()
+		stone_groups = []
+		for x in range(self.gamesize):
+			for y in range(self.gamesize):
+				new_group = set()
+				if self.board[y][x] == player and not (y,x) in stones_considered:
+					new_group = self.createGroup(x, y, player)
+				stones_considered.update(new_group)
+				if len(new_group) > 0:
+					stone_groups.append(new_group)
+		return stone_groups
+
+	def findPartionedRegions(self,groups,player):
+		"""Finds the region sets that are partioned by the list of groups 'groups' that are of the color 'player'"""
+		all_positions = {(y,x) for y in range(self.gamesize) for x in range(self.gamesize)}
+		player_positions = {pos for group in groups for pos in group}
+		not_player_positions = all_positions.difference(player_positions)
+		stones_considered = set()
+		partitioned_regions = []
+		for (y,x) in not_player_positions:
+			if not (y,x) in stones_considered:
+				new_region = self.createGroupGeneral(x,y,lambda color: color != player)
+				partitioned_regions.append(new_region)
+				stones_considered.update(new_region)
+		return partitioned_regions
+
+	def filterSmallRegions(self,regions,player):
+		"""Filters 'small' regions from all regions partitioned by the player groups
+		 according to Bensons algorithm."""
+		result = []
+		for region in regions:
+			isSmall = True
+			for (y,x) in region:
+				if self.board[y][x] == 0 \
+				and not ((x > 0 and self.board[y][x-1] == player) or (x < self.gamesize - 1 and self.board[y][x+1] == player) \
+				or (y > 0 and self.board[y-1][x] == player) or (y < self.gamesize - 1 and self.board[y+1][x] == player)):
+					isSmall = False
+					break
+			if isSmall:
+				result.append(region)
+		return result
+
+	def findVitalCounts(self,X,R):
+		"""Related to Bensons algorithm."""
+		vitals_to = []
+		for region in R:
+			vital_to = [True for i in range(len(X))]
+			for (y,x) in region:
+				for i in range(len(X)):
+					if vital_to[i] and not ((x > 0 and (y,x-1) in X[i]) or (x < self.gamesize - 1 and (y,x+1) in X[i]) \
+					or (y > 0 and (y-1,x) in X[i]) or (y < self.gamesize - 1 and (y+1,x) in X[i])):
+						vital_to[i] = False
+			vitals_to.append(vital_to)
+		if len(R) > 0:
+			vitals_to = np.array(vitals_to)
+			vital_counts = vitals_to.sum(axis=0)
+			return vital_counts
+		else:
+			return [0 for i in range(len(X))]
+
+	def filterSmallRegionsBasedOnX(self,R,X,player):
+		"""Related to Bensons algorithm. """
+		result = []
+		flat_X = {pos for group in X for pos in group}
+		for region in R:
+			stays_in_R = True
+			for (y,x) in region:
+				if ((x > 0 and self.board[y][x-1] == player and not (y,x-1) in flat_X) \
+				or (x < self.gamesize - 1 and self.board[y][x+1] == player and not (y,x+1) in flat_X) \
+				or (y > 0 and self.board[y-1][x] == player and not (y-1,x) in flat_X) \
+				or (y < self.gamesize - 1 and self.board[y+1][x] == player and not (y+1,x) in flat_X)):
+					stays_in_R = False
+					continue
+			if stays_in_R:
+				result.append(region)
+		return result
+
+	def findUnconditionallyAliveGroups(self, player):
+		"""Finds unconditionally alive groups according to Bensons algorithm"""
+		X = self.findAllGroups(player)
+		partitioned_regions = self.findPartionedRegions(X, player)
+		R = self.filterSmallRegions(partitioned_regions, player)
+
+		X_old = X
+		R_old = R
+		vital_counts = self.findVitalCounts(X,R)
+		X = [group for (i,group) in enumerate(X) if vital_counts[i] >= 2]
+		R = self.filterSmallRegionsBasedOnX(R,X,player)
+
+		while len(X) < len(X_old) or len(R) < len(R_old):
+			X_old = X
+			R_old = R
+			vital_counts = self.findVitalCounts(X,R)
+			X = [group for (i,group) in enumerate(X) if vital_counts[i] >= 2]
+			R = self.filterSmallRegionsBasedOnX(R,X,player)
+
+		if len(R) > 0:
+			return X, R
+		else:
+			return [],[]
+		 
 	def makeCapturesAll(self):
 		"""Searches through the board and makes all captures in some arbitrary order. Not really needed for normal play."""
 		stone_groups = []
