@@ -83,6 +83,7 @@ def main():
 					#(first_y, first_x) = first_player.generateMove()
 					#print(first_x, first_y)
 					#move_succesful = game.makeMove(first_x, first_y)
+                #---------NOTE: comment this and the next else clause out to remove AI from the game--------
 					if move_succesful:
 						#print("Unconditionally alive groups:", game.findUnconditionallyAliveGroups(-1))
 						(opponent_y, opponent_x) = opponent.generateMove()
