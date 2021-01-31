@@ -5,38 +5,77 @@ class Game:
 		self.gamesize = size
 		self.board = [[0 for i in range(self.gamesize)] for j in range(self.gamesize)]
 		self.turn = -1
-		#self.previousmove = (-1,-1)
-		#self.prevprevmove = (-1,-1)
 		self.previousboard = [row.copy() for row in self.board]
 		self.prevprevboard = [row.copy() for row in self.board]
 
+		self.black_captured = 0
+		self.white_captured = 0
+
+		self.movesPassed = 0
+
+		self.info_on = False
+
+	def createCopy(self):
+		"""Creates a copy of the game object"""
+		new_game = Game(self.gamesize)
+		new_game.board = [row.copy() for row in self.board]
+		new_game.turn = self.turn
+		new_game.previousboard = [row.copy() for row in self.previousboard]
+		new_game.prevprevboard = [row.copy() for row in self.prevprevboard]
+		new_game.black_captured = self.black_captured
+		new_game.white_captured = self.white_captured
+		new_game.movesPassed = self.movesPassed
+		return new_game
+
 	def makeMove(self, x, y):
 		"""Tries to make a move on the board if it's legal."""
-		print("Making move: {},{} by player {}".format(x,y,self.turn))
-		if self.board[y][x] == 0:
-			changed_group = self.createGroup(x,y,self.turn)
-			opponent_groups = self.createSurroundingOpponentGroups(changed_group, self.turn)
-			self.board[y][x] = self.turn #Put the stone in place to test if it is legal
-			for opponent_group in opponent_groups:#Delete groups that were surrounded by the move
-				if self.isSurrounded(opponent_group):
-					self.deleteGroup(opponent_group)
-			if self.isSurrounded(changed_group):#Check if the move is a suicide
-				self.board[y][x] = 0
-				print("Move illegal: Suicide!")
-				return False
-			if self.boardsEqual(self.board, self.prevprevboard):#Check for ko rule
-				print("Move illegal: Ko rule!")
-				for opponent_group in opponent_groups:
-					self.restoreGroup(opponent_group, -self.turn)
-				self.board[y][x] = 0
-				return False
-			self.turn = -self.turn
-			self.prevprevboard = self.previousboard
-			self.previousboard = [row.copy() for row in self.board]
-			return True
+		if (x,y) == (-1,-1):
+			self.passMove()
 		else:
-			print("Move illegal: Cell full!")
-			return False
+			if self.info_on:
+				print("Making move: {},{} by player {}".format(x,y,self.turn))
+			if self.board[y][x] == 0:
+				amount_captured = 0
+				changed_group = self.createGroup(x,y,self.turn)
+				opponent_groups = self.createSurroundingOpponentGroups(changed_group, self.turn)
+				self.board[y][x] = self.turn #Put the stone in place to test if it is legal
+				for opponent_group in opponent_groups:#Delete groups that were surrounded by the move
+					if self.isSurrounded(opponent_group):
+						amount_captured += len(opponent_group)
+						self.deleteGroup(opponent_group)
+				if self.isSurrounded(changed_group):#Check if the move is a suicide
+					self.board[y][x] = 0
+					if self.info_on:
+						print("Move illegal: Suicide!")
+					return False
+				if self.boardsEqual(self.board, self.prevprevboard):#Check for ko rule
+					if self.info_on:
+						print("Move illegal: Ko rule!")
+					for opponent_group in opponent_groups:
+						self.restoreGroup(opponent_group, -self.turn)
+					self.board[y][x] = 0
+					return False
+				#Move successful
+				if self.turn == 1:
+					self.black_captured += amount_captured
+				else:
+					self.white_captured += amount_captured
+				self.turn = -self.turn
+				self.prevprevboard = self.previousboard
+				self.previousboard = [row.copy() for row in self.board]
+				self.movesPassed = 0
+				return True
+			else:
+				if self.info_on:
+					print("Move illegal: Cell full!")
+				return False
+
+	def passMove(self):
+		"""Gives the other player the turn."""
+		if self.info_on:
+			print("Pass from player {}".format(self.turn))
+		self.turn = -self.turn
+		self.movesPassed += 1
 
 	def boardsEqual(self, board1, board2):
 		for y in range(len(board1)):
@@ -201,6 +240,26 @@ class Game:
 			return X, R
 		else:
 			return [],[]
+
+	def calculateScoresUnconditionalLife(self):
+		_, black_areas = self.findUnconditionallyAliveGroups(-1)
+		_, white_areas = self.findUnconditionallyAliveGroups(1)
+		black_areas = {pos for sublist in black_areas for pos in sublist}#Flatten
+		white_areas = {pos for sublist in white_areas for pos in sublist}
+		black_area_points = sum((2 if self.board[y][x] != 0 else 1 for (y,x) in black_areas))
+		white_area_points = sum((2 if self.board[y][x] != 0 else 1 for (y,x) in white_areas))
+		return (black_area_points + self.white_captured, white_area_points + self.black_captured)
+
+	def checkWinnerUnconditionalLife(self):
+		"""Returns the winner of the game by evaluating the board according to the unconditional life method"""
+		black_points, white_points = self.calculateScoresUnconditionalLife()
+		balance = black_points - white_points
+		if balance > 0:
+			return -1
+		elif balance < 0:
+			return 1
+		else:
+			return 0
 		 
 	def makeCapturesAll(self):
 		"""Searches through the board and makes all captures in some arbitrary order. Not really needed for normal play."""
